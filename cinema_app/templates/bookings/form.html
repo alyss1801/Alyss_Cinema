@@ -1,0 +1,382 @@
+{% extends "base.html" %}
+{% block title %}CinemaHub — {% if mode == 'edit' %}Sửa Booking #{{ booking.maBooking }}{% else %}Đặt vé mới{% endif %}{% endblock %}
+
+{% block content %}
+
+{% if mode == 'edit' %}
+<!-- ========== CHẾ ĐỘ SỬA ========== -->
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-pencil-square"></i> Sửa Booking #{{ booking.maBooking }}</h4>
+            </div>
+            <div class="card-body">
+                <!-- Thông tin booking hiện tại -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <p><strong>Khách hàng:</strong> {{ booking.tenKhachHang }}</p>
+                        <p><strong>Phim:</strong> {{ booking.tenPhim }}</p>
+                        <p><strong>Suất chiếu:</strong> {{ booking.thoiGianBatDau | format_datetime }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Phòng chiếu:</strong> {{ booking.tenPhongChieu }}</p>
+                        <p><strong>Tổng tiền:</strong> <span class="fw-bold text-primary">{{ booking.tongTien | format_vnd }}</span></p>
+                        <p><strong>Trạng thái hiện tại:</strong>
+                            {% if booking.trangThai == 'Confirmed' %}
+                                <span class="badge bg-success">Confirmed</span>
+                            {% elif booking.trangThai == 'Pending' %}
+                                <span class="badge bg-warning text-dark">Pending</span>
+                            {% else %}
+                                <span class="badge bg-danger">Cancelled</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Danh sách ghế -->
+                {% if seats %}
+                <h6>Ghế đã đặt:</h6>
+                <div class="d-flex flex-wrap gap-2 mb-4">
+                    {% for s in seats %}
+                    <span class="badge 
+                        {% if s.loaiGhe == 'VIP' %}bg-warning text-dark
+                        {% elif s.loaiGhe == 'Doi' %}bg-danger
+                        {% else %}bg-secondary{% endif %} p-2">
+                        {{ s.hangGhe }}{{ s.soGhe }} ({{ s.loaiGhe }}) — {{ s.giaVe | format_vnd }}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <!-- Form sửa trạng thái -->
+                {% if booking.trangThai != 'Cancelled' %}
+                <form method="POST" action="{{ url_for('booking_edit', booking_id=booking.maBooking) }}">
+                    <div class="mb-3">
+                        <label for="trangThaiMoi" class="form-label fw-bold">Chuyển trạng thái:</label>
+                        <select name="trangThaiMoi" id="trangThaiMoi" class="form-select" required>
+                            <option value="">-- Chọn trạng thái --</option>
+                            {% if booking.trangThai == 'Pending' %}
+                                <option value="Confirmed">Confirmed (Xác nhận)</option>
+                            {% elif booking.trangThai == 'Confirmed' %}
+                                <option value="Pending">Pending (Chuyển về chờ xử lý)</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle"></i> Cập nhật
+                        </button>
+                        <a href="{{ url_for('booking_list') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Quay lại
+                        </a>
+                    </div>
+                </form>
+                {% else %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> Booking này đã bị hủy, không thể chỉnh sửa.
+                </div>
+                <a href="{{ url_for('booking_list') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Quay lại
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<!-- ========== CHẾ ĐỘ THÊM MỚI ========== -->
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0"><i class="bi bi-plus-circle"></i> Đặt vé mới</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('booking_new') }}" id="bookingForm">
+                    <div class="row g-3">
+                        <!-- Thông tin khách hàng (từ session) -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">
+                                <i class="bi bi-person"></i> Khách hàng
+                            </label>
+                            <div class="form-control bg-light">
+                                <i class="bi bi-person-fill text-primary"></i>
+                                {{ current_user.hoTen if current_user else 'N/A' }}
+                                {% if user and user.soDuVi is not none %}
+                                <span class="float-end badge bg-warning text-dark">
+                                    <i class="bi bi-wallet2"></i> Ví: {{ "{:,.0f}".format(user.soDuVi) }} VND
+                                </span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Bước 2: Chọn suất chiếu -->
+                        <div class="col-md-6">
+                            <label for="maSuatChieu" class="form-label fw-bold">
+                                <i class="bi bi-calendar-event"></i> Suất chiếu <span class="text-danger">*</span>
+                            </label>
+                            <select name="maSuatChieu" id="maSuatChieu" class="form-select" required>
+                                <option value="">-- Chọn suất chiếu --</option>
+                                {% for sc in showtimes %}
+                                <option value="{{ sc.maSuatChieu }}"
+                                        data-phong="{{ sc.maPhongChieu }}"
+                                        data-loaiphong="{{ sc.loaiPhong }}"
+                                        data-gia="{{ sc.giaVeCoBan }}">
+                                    {{ sc.tenPhim }} — {{ sc.thoiGianBatDau | format_datetime }}
+                                    ({{ sc.tenPhongChieu }}, {{ sc.loaiPhong }})
+                                    — {{ sc.giaVeCoBan | format_vnd }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Bước 3: Mã giảm giá -->
+                        <div class="col-md-4">
+                            <label for="maCodeGiamGia" class="form-label fw-bold">
+                                <i class="bi bi-tag"></i> Mã giảm giá (tùy chọn)
+                            </label>
+                            <input type="text" name="maCodeGiamGia" id="maCodeGiamGia"
+                                   class="form-control" placeholder="VD: WELCOME10">
+                        </div>
+
+                        <!-- Thông tin ghế đã chọn -->
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Ghế đã chọn</label>
+                            <div id="selectedSeatsInfo" class="form-control bg-light" style="min-height: 38px;">
+                                <span class="text-muted">Chưa chọn ghế</span>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Tổng tạm tính</label>
+                            <div id="totalPrice" class="form-control bg-light fw-bold text-primary" style="min-height: 38px;">
+                                0 VND
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bước 4: Sơ đồ ghế -->
+                    <div class="mt-4">
+                        <h5 class="fw-bold"><i class="bi bi-grid-3x3-gap"></i> Sơ đồ phòng chiếu</h5>
+                        <div class="text-center mb-2">
+                            <div class="screen-indicator">MÀN HÌNH</div>
+                        </div>
+                        <div id="seatMap" class="seat-map-container text-center">
+                            <p class="text-muted py-5">Vui lòng chọn suất chiếu để hiển thị sơ đồ ghế.</p>
+                        </div>
+                        <!-- Chú thích -->
+                        <div class="d-flex justify-content-center gap-4 mt-3 flex-wrap">
+                            <span><span class="seat-legend seat-available"></span> Trống</span>
+                            <span><span class="seat-legend seat-selected"></span> Đang chọn</span>
+                            <span><span class="seat-legend seat-booked"></span> Đã đặt</span>
+                            <span><span class="seat-legend seat-vip"></span> VIP</span>
+                            <span><span class="seat-legend seat-couple"></span> Đôi</span>
+                        </div>
+                    </div>
+
+                    <!-- Hidden input cho danh sách ghế -->
+                    <input type="hidden" name="danhSachGhe" id="danhSachGhe" value="[]">
+
+                    <!-- Buttons -->
+                    <div class="d-flex gap-2 mt-4">
+                        <button type="submit" class="btn btn-success btn-lg" id="btnSubmit" disabled>
+                            <i class="bi bi-credit-card"></i> Thanh toán & Đặt vé
+                        </button>
+                        <a href="{{ url_for('booking_list') }}" class="btn btn-outline-secondary btn-lg">
+                            <i class="bi bi-arrow-left"></i> Quay lại
+                        </a>
+                    </div>
+                    <small class="text-muted mt-2 d-block">
+                        <i class="bi bi-info-circle"></i> Tiền sẽ được trừ trực tiếp từ ví ảo của bạn.
+                    </small>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if mode == 'new' %}
+<script>
+// ---- State quản lý ghế ----
+let selectedSeats = [];
+let seatPrices = {};
+const MAX_SEATS = 8;
+
+// ---- Khi chọn suất chiếu → load sơ đồ ghế ----
+document.getElementById('maSuatChieu').addEventListener('change', function() {
+    const showtimeId = this.value;
+    selectedSeats = [];
+    seatPrices = {};
+    updateUI();
+
+    if (!showtimeId) {
+        document.getElementById('seatMap').innerHTML =
+            '<p class="text-muted py-5">Vui lòng chọn suất chiếu để hiển thị sơ đồ ghế.</p>';
+        return;
+    }
+
+    // Hiển thị loading
+    document.getElementById('seatMap').innerHTML =
+        '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p class="mt-2">Đang tải sơ đồ ghế...</p></div>';
+
+    fetch(`/api/seats/${showtimeId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                renderSeatMap(data.seats, showtimeId);
+            } else {
+                document.getElementById('seatMap').innerHTML =
+                    `<div class="alert alert-danger">${data.error}</div>`;
+            }
+        })
+        .catch(err => {
+            document.getElementById('seatMap').innerHTML =
+                `<div class="alert alert-danger">Lỗi kết nối: ${err}</div>`;
+        });
+});
+
+// ---- Render sơ đồ ghế ----
+function renderSeatMap(seats, showtimeId) {
+    const container = document.getElementById('seatMap');
+    if (!seats.length) {
+        container.innerHTML = '<p class="text-muted py-5">Phòng chiếu chưa có ghế.</p>';
+        return;
+    }
+
+    // Nhóm ghế theo hàng
+    const rows = {};
+    seats.forEach(s => {
+        if (!rows[s.hangGhe]) rows[s.hangGhe] = [];
+        rows[s.hangGhe].push(s);
+    });
+
+    let html = '<div class="seat-grid">';
+    for (const [row, rowSeats] of Object.entries(rows)) {
+        html += `<div class="seat-row">`;
+        html += `<span class="seat-row-label">${row}</span>`;
+        rowSeats.sort((a, b) => a.soGhe - b.soGhe);
+        rowSeats.forEach(seat => {
+            let seatClass = 'seat';
+            let disabled = false;
+
+            if (seat.trangThaiDat === 'DaDat') {
+                seatClass += ' seat-booked';
+                disabled = true;
+            } else if (seat.trangThaiDat === 'KhongKhaDung') {
+                seatClass += ' seat-disabled';
+                disabled = true;
+            } else {
+                seatClass += ' seat-available';
+                if (seat.loaiGhe === 'VIP') seatClass += ' seat-vip';
+                if (seat.loaiGhe === 'Doi') seatClass += ' seat-couple';
+            }
+
+            html += `<button type="button" class="${seatClass}"
+                data-id="${seat.maGhe}" data-loai="${seat.loaiGhe}"
+                data-showtime="${showtimeId}"
+                ${disabled ? 'disabled' : ''}
+                title="${row}${seat.soGhe} (${seat.loaiGhe})">
+                ${seat.soGhe}
+            </button>`;
+        });
+        html += `</div>`;
+    }
+    html += '</div>';
+    container.innerHTML = html;
+
+    // Attach event listener cho ghế
+    container.querySelectorAll('.seat-available').forEach(btn => {
+        btn.addEventListener('click', function() {
+            toggleSeat(this);
+        });
+    });
+}
+
+// ---- Toggle chọn/bỏ chọn ghế ----
+function toggleSeat(btn) {
+    const seatId = parseInt(btn.dataset.id);
+    const showtimeId = btn.dataset.showtime;
+    const idx = selectedSeats.indexOf(seatId);
+
+    if (idx > -1) {
+        // Bỏ chọn
+        selectedSeats.splice(idx, 1);
+        delete seatPrices[seatId];
+        btn.classList.remove('seat-selected');
+    } else {
+        // Chọn mới
+        if (selectedSeats.length >= MAX_SEATS) {
+            alert(`Bạn chỉ có thể chọn tối đa ${MAX_SEATS} ghế!`);
+            return;
+        }
+        selectedSeats.push(seatId);
+        btn.classList.add('seat-selected');
+
+        // Fetch giá vé
+        fetch(`/api/price/${seatId}/${showtimeId}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    seatPrices[seatId] = data.price;
+                    updateUI();
+                }
+            });
+    }
+
+    updateUI();
+}
+
+// ---- Cập nhật UI ----
+function updateUI() {
+    // Cập nhật hidden input
+    document.getElementById('danhSachGhe').value = JSON.stringify(selectedSeats);
+
+    // Cập nhật thông tin ghế đã chọn
+    const info = document.getElementById('selectedSeatsInfo');
+    if (selectedSeats.length === 0) {
+        info.innerHTML = '<span class="text-muted">Chưa chọn ghế</span>';
+    } else {
+        const labels = selectedSeats.map(id => {
+            const btn = document.querySelector(`[data-id="${id}"]`);
+            const parent = btn.closest('.seat-row');
+            const rowLabel = parent.querySelector('.seat-row-label').textContent;
+            return `${rowLabel}${btn.textContent.trim()} (${btn.dataset.loai})`;
+        });
+        info.innerHTML = `<span class="badge bg-primary me-1">${selectedSeats.length} ghế</span> ` + labels.join(', ');
+    }
+
+    // Cập nhật tổng tiền
+    let total = 0;
+    for (const p of Object.values(seatPrices)) {
+        total += p;
+    }
+    document.getElementById('totalPrice').textContent =
+        total.toLocaleString('vi-VN') + ' VND';
+
+    // Bật/tắt nút submit
+    document.getElementById('btnSubmit').disabled = selectedSeats.length === 0;
+}
+
+// ---- Validate form trước khi submit ----
+document.getElementById('bookingForm').addEventListener('submit', function(e) {
+    if (selectedSeats.length === 0) {
+        e.preventDefault();
+        alert('Vui lòng chọn ít nhất 1 ghế!');
+        return;
+    }
+    if (selectedSeats.length > MAX_SEATS) {
+        e.preventDefault();
+        alert(`Số ghế không được vượt quá ${MAX_SEATS}!`);
+        return;
+    }
+    // Show loading
+    showLoading();
+});
+</script>
+{% endif %}
+{% endblock %}
